@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "CircuitAI",
+    "slug": "circuitai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.circuitai.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.circuitai.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "CircuitAI uses the microphone so you can ask electronics questions by voice."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "CircuitAI needs photo access so you can attach pictures of components.",
+          "cameraPermission": "CircuitAI needs the camera so you can photograph components."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "expo-status-bar",
+      "expo-asset"
+    ],
+    "scheme": "circuitai",
+    "backgroundColor": "#0B0D10"
+  }
+}
