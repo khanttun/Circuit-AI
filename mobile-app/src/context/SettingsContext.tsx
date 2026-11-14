@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useColorScheme } from 'react-native';
-import { DEFAULT_BASE_URL, STORAGE_KEYS } from '@/constants/config';
+import { DEFAULT_BASE_URL, SECURE_STORAGE_KEYS, STORAGE_KEYS } from '@/constants/config';
 import { darkPalette, lightPalette, type Palette } from '@/constants/theme';
 import { createServices, type Services } from '@/services';
 import { normalizeBaseUrl } from '@/services/api/apiClient';
@@ -17,12 +18,16 @@ const DEFAULTS: AppSettings = {
   mockMode: false,
   autoSendVoice: true,
   haptics: true,
+  connectionMode: 'server',
 };
 
 interface SettingsContextValue {
   settings: AppSettings;
   loaded: boolean;
   update: (patch: Partial<AppSettings>) => void;
+  groqKeyConfigured: boolean;
+  saveGroqApiKey: (key: string) => Promise<void>;
+  deleteGroqApiKey: () => Promise<void>;
   services: Services;
   colors: Palette;
   isDark: boolean;
@@ -33,20 +38,25 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(DEFAULTS);
   const [loaded, setLoaded] = useState(false);
+  const [groqKeyConfigured, setGroqKeyConfigured] = useState(false);
   const system = useColorScheme();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const groqKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEYS.settings)
-      .then((raw) => {
-        if (!raw) return;
-        const next = { ...DEFAULTS, ...JSON.parse(raw) };
-        if (normalizeBaseUrl(next.baseUrl) === LEGACY_DEFAULT_BASE_URL) {
-          next.baseUrl = DEFAULT_BASE_URL;
-          AsyncStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(next)).catch(() => {});
+    Promise.all([AsyncStorage.getItem(STORAGE_KEYS.settings), SecureStore.getItemAsync(SECURE_STORAGE_KEYS.groqApiKey)])
+      .then(([raw, key]) => {
+        if (raw) {
+          const next = { ...DEFAULTS, ...JSON.parse(raw) };
+          if (normalizeBaseUrl(next.baseUrl) === LEGACY_DEFAULT_BASE_URL) {
+            next.baseUrl = DEFAULT_BASE_URL;
+            AsyncStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(next)).catch(() => {});
+          }
+          setSettings(next);
         }
-        setSettings(next);
+        groqKeyRef.current = key?.trim() || null;
+        setGroqKeyConfigured(Boolean(groqKeyRef.current));
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
@@ -61,18 +71,38 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const saveGroqApiKey = useCallback(async (key: string) => {
+    const value = key.trim();
+    if (!value) throw new Error('Enter a Groq API key first.');
+    await SecureStore.setItemAsync(SECURE_STORAGE_KEYS.groqApiKey, value);
+    groqKeyRef.current = value;
+    setGroqKeyConfigured(true);
+  }, []);
+
+  const deleteGroqApiKey = useCallback(async () => {
+    await SecureStore.deleteItemAsync(SECURE_STORAGE_KEYS.groqApiKey);
+    groqKeyRef.current = null;
+    setGroqKeyConfigured(false);
+  }, []);
+
   // Services read the base URL lazily, so a URL change applies to the next request.
   const services = useMemo(
-    () => createServices({ provider: settings.aiProvider, mockMode: settings.mockMode, getBaseUrl: () => settingsRef.current.baseUrl }),
-    [settings.aiProvider, settings.mockMode],
+    () => createServices({
+      provider: settings.aiProvider,
+      mockMode: settings.mockMode,
+      connectionMode: settings.connectionMode,
+      getBaseUrl: () => settingsRef.current.baseUrl,
+      getGroqApiKey: () => groqKeyRef.current,
+    }),
+    [settings.aiProvider, settings.connectionMode, settings.mockMode],
   );
 
   const isDark = settings.theme === 'system' ? system !== 'light' : settings.theme === 'dark';
   const colors = isDark ? darkPalette : lightPalette;
 
   const value = useMemo(
-    () => ({ settings, loaded, update, services, colors, isDark }),
-    [settings, loaded, update, services, colors, isDark],
+    () => ({ settings, loaded, update, services, colors, isDark, groqKeyConfigured, saveGroqApiKey, deleteGroqApiKey }),
+    [settings, loaded, update, services, colors, isDark, groqKeyConfigured, saveGroqApiKey, deleteGroqApiKey],
   );
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }

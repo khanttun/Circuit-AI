@@ -52,7 +52,8 @@
         }
       ],
       "expo-status-bar",
-      "expo-asset"
+      "expo-asset",
+      "expo-secure-store"
     ],
     "scheme": "circuitai",
     "backgroundColor": "#0B0D10"

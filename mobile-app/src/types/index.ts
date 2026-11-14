@@ -2,6 +2,7 @@ export type Role = 'user' | 'assistant';
 export type MessageStatus = 'sent' | 'error';
 export type Difficulty = 'Beginner' | 'Intermediate' | 'Advanced';
 export type AIProvider = 'cloud' | 'local' | 'automatic';
+export type ConnectionMode = 'server' | 'personal';
 
 export interface ImageAttachment {
   uri: string;
@@ -111,4 +112,5 @@ export interface AppSettings {
   mockMode: boolean;
   autoSendVoice: boolean;
   haptics: boolean;
+  connectionMode: ConnectionMode;
 }

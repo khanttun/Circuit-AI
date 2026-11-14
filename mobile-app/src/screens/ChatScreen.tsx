@@ -102,7 +102,7 @@ export default function ChatScreen() {
         <Logo size={34} />
         <Text style={s.name}>{APP_NAME}</Text>
         {services.mock ? <View style={s.mockPill}><Text style={s.mockText}>MOCK MODE</Text></View> : null}
-        {!services.mock ? <View style={s.providerPill}><Text style={s.providerText}>{settings.aiProvider === 'cloud' ? 'CLOUD QWEN' : settings.aiProvider.toUpperCase()}</Text></View> : null}
+         {!services.mock ? <View style={s.providerPill}><Text style={s.providerText}>{settings.connectionMode === 'personal' ? 'PERSONAL GROQ' : settings.aiProvider === 'cloud' ? 'CLOUD QWEN' : settings.aiProvider.toUpperCase()}</Text></View> : null}
         <View style={{ flex: 1 }} />
         {messages.length > 0 && <IconButton icon={Trash2} label="Clear conversation" onPress={confirmClear} />}
         <IconButton icon={Plus} label="New conversation" onPress={() => { chat.newConversation(); setDraft(''); clearImage(); }} filled color={colors.text} />

@@ -10,6 +10,9 @@ export const STORAGE_KEYS = {
   conversations: 'circuitai.conversations.v1',
   settings: 'circuitai.settings.v1',
 } as const;
+export const SECURE_STORAGE_KEYS = {
+  groqApiKey: 'circuitai.groq-api-key',
+} as const;
 export const ENDPOINTS = {
   chat: '/api/chat',
   transcribe: '/voice/transcribe',

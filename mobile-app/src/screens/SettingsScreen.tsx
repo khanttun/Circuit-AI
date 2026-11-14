@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from 'expo-audio';
-import { Check, Cloud, Laptop, Shuffle } from 'lucide-react-native';
+import { Check, Cloud, KeyRound } from 'lucide-react-native';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, AppState, Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { ScreenHeader } from '@/components/common/ScreenHeader';
@@ -11,7 +11,7 @@ import { useSettings, useTheme } from '@/context/SettingsContext';
 import { useStyles } from '@/hooks/useStyles';
 import { createApiClient, isValidBaseUrl, normalizeBaseUrl } from '@/services/api/apiClient';
 import { createHealthService } from '@/services/api/healthService';
-import type { AIProvider, ThemePreference } from '@/types';
+import type { ConnectionMode, ThemePreference } from '@/types';
 
 const factory = (c: Palette) => ({
   root: { flex: 1, backgroundColor: c.bg },
@@ -56,12 +56,13 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 export default function SettingsScreen() {
   const s = useStyles(factory);
   const { colors } = useTheme();
-  const { settings, update, services } = useSettings();
+  const { settings, update, services, groqKeyConfigured, saveGroqApiKey, deleteGroqApiKey } = useSettings();
   const chat = useChat();
   const [urlDraft, setUrlDraft] = useState(settings.baseUrl);
   const [conn, setConn] = useState<Conn>({ kind: 'unknown' });
   const [lastConnected, setLastConnected] = useState<number | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
+  const [groqKeyDraft, setGroqKeyDraft] = useState('');
   const [mic, setMic] = useState<{ granted: boolean; canAskAgain: boolean } | null>(null);
 
   const refreshMic = useCallback(async () => {
@@ -98,15 +99,55 @@ export default function SettingsScreen() {
     }
   }, []);
 
+  const testPersonal = useCallback(async () => {
+    setConn({ kind: 'checking' });
+    try {
+      const h = await services.health.check();
+      setModelName(h.modelName ?? null);
+      if (!h.model) {
+        setConn({ kind: 'fail', detail: 'The selected Groq Qwen model is not available for this key.' });
+        return;
+      }
+      setLastConnected(Date.now());
+      setConn({ kind: 'ok', detail: 'Personal Groq connection is reachable' });
+    } catch (e) {
+      setConn({ kind: 'fail', detail: e instanceof Error ? e.message : 'Personal Groq connection failed' });
+    }
+  }, [services]);
+
   useEffect(() => {
-    if (!settings.mockMode) test(settings.baseUrl);
-  }, [settings.mockMode, settings.baseUrl, test]);
+    if (settings.mockMode) return;
+    if (settings.connectionMode === 'server') test(settings.baseUrl);
+    else if (groqKeyConfigured) testPersonal();
+    else setConn({ kind: 'unknown' });
+  }, [groqKeyConfigured, settings.baseUrl, settings.connectionMode, settings.mockMode, test, testPersonal]);
 
   const saveUrl = () => {
     if (!urlValid) return;
     update({ baseUrl: urlDraft });
     setUrlDraft(normalizeBaseUrl(urlDraft));
     test(normalizeBaseUrl(urlDraft));
+  };
+
+  const savePersonalKey = async () => {
+    try {
+      await saveGroqApiKey(groqKeyDraft);
+      setGroqKeyDraft('');
+      await testPersonal();
+    } catch (e) {
+      setConn({ kind: 'fail', detail: e instanceof Error ? e.message : 'Could not save the Groq API key.' });
+    }
+  };
+
+  const removePersonalKey = () => {
+    Alert.alert('Remove personal Groq key?', 'Personal Groq mode will stop working until another key is added.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => deleteGroqApiKey().then(() => setConn({ kind: 'unknown' })).catch(() => setConn({ kind: 'fail', detail: 'Could not remove the saved key.' })),
+      },
+    ]);
   };
 
   const micAction = async () => {
@@ -125,14 +166,21 @@ export default function SettingsScreen() {
     { key: 'system', label: 'System' },
   ];
 
-  const providers: { key: AIProvider; name: string; description: string; status: string; icon: typeof Cloud }[] = [
-    { key: 'cloud', name: 'Cloud Qwen', description: 'Uses your FastAPI server and Alibaba Cloud Model Studio.', status: 'Available', icon: Cloud },
-    { key: 'local', name: 'Local Qwen', description: 'Connects to your Windows PC through Ollama.', status: 'Coming soon', icon: Laptop },
-    { key: 'automatic', name: 'Automatic', description: 'Will try Local Qwen before Cloud Qwen.', status: 'Coming soon', icon: Shuffle },
+  const connectionModes: { key: ConnectionMode; name: string; description: string; icon: typeof Cloud }[] = [
+    { key: 'server', name: 'CircuitAI Server', description: 'Uses the configured FastAPI server on your PC.', icon: Cloud },
+    { key: 'personal', name: 'Personal Groq Key', description: 'Calls Groq directly with your own key stored securely on this device.', icon: KeyRound },
   ];
 
   const statusColor = conn.kind === 'ok' ? colors.success : conn.kind === 'fail' ? colors.danger : colors.textFaint;
-  const statusLabel = services.mock && conn.kind === 'unknown' ? 'Mock mode' : conn.kind === 'ok' ? 'Connected' : conn.kind === 'fail' ? 'Server unavailable' : conn.kind === 'checking' ? 'Checking…' : 'Not configured';
+  const statusLabel = services.mock && conn.kind === 'unknown'
+    ? 'Mock mode'
+    : conn.kind === 'ok'
+      ? 'Connected'
+      : conn.kind === 'fail'
+        ? settings.connectionMode === 'personal' ? 'Groq unavailable' : 'Server unavailable'
+        : conn.kind === 'checking'
+          ? 'Checking…'
+          : settings.connectionMode === 'personal' && groqKeyConfigured ? 'Not tested' : 'Not configured';
 
   return (
     <View style={s.root}>
@@ -193,41 +241,39 @@ export default function SettingsScreen() {
           </View>
         </Section>
 
-        <Section title="AI Provider">
-          {providers.map((provider, index) => {
-            const selected = settings.aiProvider === provider.key;
-            const available = provider.key === 'cloud';
-            const Icon = provider.icon;
+        <Section title="Connection mode">
+          {connectionModes.map((mode, index) => {
+            const selected = settings.connectionMode === mode.key;
+            const Icon = mode.icon;
             return (
-              <View key={provider.key}>
+              <View key={mode.key}>
                 {index > 0 ? <View style={s.divider} /> : null}
                 <Pressable
-                  style={[s.providerCard, selected && { backgroundColor: colors.accentSoft }, !available && { opacity: 0.55 }]}
-                  disabled={!available}
-                  onPress={() => update({ aiProvider: provider.key })}
+                  style={[s.providerCard, selected && { backgroundColor: colors.accentSoft }]}
+                  onPress={() => { update({ connectionMode: mode.key, ...(mode.key === 'personal' ? { mockMode: false } : {}) }); setConn({ kind: 'unknown' }); }}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected, disabled: !available }}
+                  accessibilityState={{ selected }}
                 >
                   <View style={s.providerCardHeader}>
                     <View style={[s.providerIcon, { backgroundColor: selected ? colors.accent : colors.surfaceAlt }]}>
                       <Icon size={19} color={selected ? colors.onAccent : colors.textMuted} />
                     </View>
-                    <Text style={s.providerName}>{provider.name}</Text>
-                    <Text style={[s.providerStatus, { color: available ? colors.success : colors.textMuted }]}>{provider.status}</Text>
+                    <Text style={s.providerName}>{mode.name}</Text>
+                    <Text style={[s.providerStatus, { color: selected ? colors.success : colors.textMuted }]}>{selected ? 'Selected' : 'Available'}</Text>
                     {selected ? <Check size={18} color={colors.accent} /> : null}
                   </View>
-                  <Text style={s.providerDescription}>{provider.description}</Text>
+                  <Text style={s.providerDescription}>{mode.description}</Text>
                 </Pressable>
               </View>
             );
           })}
         </Section>
 
-        <Section title="Cloud connection">
+        {settings.connectionMode === 'server' ? <Section title="CircuitAI server connection">
           <View style={s.row}>
             <View style={{ flex: 1 }}>
                <Text style={s.label}>Use mock services</Text>
-               <Text style={s.hint}>Development-only sample responses. Turn this off to use Cloud Qwen.</Text>
+                <Text style={s.hint}>Development-only sample responses. Turn this off to use the selected connection.</Text>
             </View>
             <Switch value={settings.mockMode} onValueChange={(v) => update({ mockMode: v })} trackColor={{ true: colors.accent, false: colors.surfaceAlt }} />
           </View>
@@ -274,7 +320,45 @@ export default function SettingsScreen() {
           <View style={{ padding: 16 }}>
             <Text style={s.hint}>Endpoints: POST {ENDPOINTS.chat} · POST {ENDPOINTS.transcribe} · GET {ENDPOINTS.health} · GET {ENDPOINTS.history}</Text>
           </View>
-        </Section>
+        </Section> : <Section title="Personal Groq key">
+          <View style={{ padding: 16, gap: 10 }}>
+            <Text style={s.label}>Groq API key</Text>
+            <Text style={s.hint}>Get a key from console.groq.com. It is stored securely on this device and is not sent to your CircuitAI server.</Text>
+            <TextInput
+              style={[s.input, { flex: 0 }]}
+              value={groqKeyDraft}
+              onChangeText={setGroqKeyDraft}
+              placeholder={groqKeyConfigured ? 'Key saved. Enter a new key to replace it.' : 'gsk_...'}
+              placeholderTextColor={colors.textFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              accessibilityLabel="Personal Groq API key"
+            />
+            <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+              <Pressable style={[s.btn, s.btnPrimary, !groqKeyDraft.trim() && { opacity: 0.45 }]} disabled={!groqKeyDraft.trim()} onPress={savePersonalKey} accessibilityRole="button">
+                <Text style={[s.btnText, { color: colors.onAccent }]}>{groqKeyConfigured ? 'Replace key' : 'Save key'}</Text>
+              </Pressable>
+              {groqKeyConfigured ? <Pressable style={s.btn} onPress={removePersonalKey} accessibilityRole="button"><Text style={[s.btnText, { color: colors.danger }]}>Remove key</Text></Pressable> : null}
+              <Pressable style={s.btn} onPress={testPersonal} disabled={!groqKeyConfigured || conn.kind === 'checking'} accessibilityRole="button">
+                {conn.kind === 'checking' ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+                <Text style={s.btnText}>Test connection</Text>
+              </Pressable>
+            </View>
+          </View>
+          <View style={s.divider} />
+          <View style={[s.row, { alignItems: 'flex-start' }]}>
+            <Text style={s.label}>Connection status</Text>
+            <View style={{ alignItems: 'flex-end', flex: 1, gap: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={[s.statusDot, { backgroundColor: statusColor }]} />
+                <Text style={s.value}>{groqKeyConfigured ? statusLabel : 'Key not configured'}</Text>
+              </View>
+              {conn.kind === 'ok' || conn.kind === 'fail' ? <Text style={[s.hint, { textAlign: 'right' }]}>{conn.detail}</Text> : null}
+              {modelName ? <Text style={[s.hint, { textAlign: 'right' }]}>Model: {modelName}</Text> : null}
+            </View>
+          </View>
+        </Section>}
 
         <Section title="Data">
           <Pressable
