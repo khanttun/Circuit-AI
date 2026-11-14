@@ -7,11 +7,14 @@ import { createServices, type Services } from '@/services';
 import { normalizeBaseUrl } from '@/services/api/apiClient';
 import type { AppSettings } from '@/types';
 
+const LEGACY_DEFAULT_BASE_URL = 'http://192.168.1.100:8000';
+
 const DEFAULTS: AppSettings = {
   displayName: '',
   theme: 'dark',
   baseUrl: DEFAULT_BASE_URL,
-  mockMode: true,
+  aiProvider: 'cloud',
+  mockMode: false,
   autoSendVoice: true,
   haptics: true,
 };
@@ -37,7 +40,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEYS.settings)
       .then((raw) => {
-        if (raw) setSettings({ ...DEFAULTS, ...JSON.parse(raw) });
+        if (!raw) return;
+        const next = { ...DEFAULTS, ...JSON.parse(raw) };
+        if (normalizeBaseUrl(next.baseUrl) === LEGACY_DEFAULT_BASE_URL) {
+          next.baseUrl = DEFAULT_BASE_URL;
+          AsyncStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(next)).catch(() => {});
+        }
+        setSettings(next);
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
@@ -54,8 +63,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   // Services read the base URL lazily, so a URL change applies to the next request.
   const services = useMemo(
-    () => createServices({ mockMode: settings.mockMode, getBaseUrl: () => settingsRef.current.baseUrl }),
-    [settings.mockMode],
+    () => createServices({ provider: settings.aiProvider, mockMode: settings.mockMode, getBaseUrl: () => settingsRef.current.baseUrl }),
+    [settings.aiProvider, settings.mockMode],
   );
 
   const isDark = settings.theme === 'system' ? system !== 'light' : settings.theme === 'dark';

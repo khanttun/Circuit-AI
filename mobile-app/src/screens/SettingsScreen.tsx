@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from 'expo-audio';
+import { Check, Cloud, Laptop, Shuffle } from 'lucide-react-native';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, AppState, Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { ScreenHeader } from '@/components/common/ScreenHeader';
@@ -10,7 +11,7 @@ import { useSettings, useTheme } from '@/context/SettingsContext';
 import { useStyles } from '@/hooks/useStyles';
 import { createApiClient, isValidBaseUrl, normalizeBaseUrl } from '@/services/api/apiClient';
 import { createHealthService } from '@/services/api/healthService';
-import type { ThemePreference } from '@/types';
+import type { AIProvider, ThemePreference } from '@/types';
 
 const factory = (c: Palette) => ({
   root: { flex: 1, backgroundColor: c.bg },
@@ -32,6 +33,12 @@ const factory = (c: Palette) => ({
   btnPrimary: { backgroundColor: c.accent },
   btnText: { color: c.text, fontSize: 14, fontWeight: '600' as const },
   statusDot: { width: 9, height: 9, borderRadius: 5 },
+  providerCard: { padding: 14, gap: 8 },
+  providerCardHeader: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10 },
+  providerIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center' as const, justifyContent: 'center' as const },
+  providerName: { color: c.text, fontSize: 15.5, fontWeight: '700' as const, flex: 1 },
+  providerDescription: { color: c.textMuted, fontSize: 13, lineHeight: 18, paddingLeft: 46 },
+  providerStatus: { fontSize: 11.5, fontWeight: '700' as const, letterSpacing: 0.3, textTransform: 'uppercase' as const },
 });
 
 type Conn = { kind: 'unknown' } | { kind: 'checking' } | { kind: 'ok'; detail: string } | { kind: 'fail'; detail: string };
@@ -53,6 +60,8 @@ export default function SettingsScreen() {
   const chat = useChat();
   const [urlDraft, setUrlDraft] = useState(settings.baseUrl);
   const [conn, setConn] = useState<Conn>({ kind: 'unknown' });
+  const [lastConnected, setLastConnected] = useState<number | null>(null);
+  const [modelName, setModelName] = useState<string | null>(null);
   const [mic, setMic] = useState<{ granted: boolean; canAskAgain: boolean } | null>(null);
 
   const refreshMic = useCallback(async () => {
@@ -76,8 +85,14 @@ export default function SettingsScreen() {
     }
     setConn({ kind: 'checking' });
     try {
-      const h = await createHealthService(createApiClient(() => url)).check();
-      setConn({ kind: 'ok', detail: h.model ? `Backend and AI model reachable${h.modelName ? ` (${h.modelName})` : ''}` : 'Backend reachable, but the AI model is not ready' });
+       const h = await createHealthService(createApiClient(() => url)).check();
+       setModelName(h.modelName ?? null);
+       if (!h.model) {
+         setConn({ kind: 'fail', detail: 'The server is reachable, but Cloud Qwen is not configured.' });
+         return;
+       }
+       setLastConnected(Date.now());
+       setConn({ kind: 'ok', detail: `Cloud Qwen is reachable${h.modelName ? ` (${h.modelName})` : ''}` });
     } catch (e) {
       setConn({ kind: 'fail', detail: e instanceof Error ? e.message : 'Connection failed' });
     }
@@ -110,8 +125,14 @@ export default function SettingsScreen() {
     { key: 'system', label: 'System' },
   ];
 
+  const providers: { key: AIProvider; name: string; description: string; status: string; icon: typeof Cloud }[] = [
+    { key: 'cloud', name: 'Cloud Qwen', description: 'Uses your FastAPI server and Alibaba Cloud Model Studio.', status: 'Available', icon: Cloud },
+    { key: 'local', name: 'Local Qwen', description: 'Connects to your Windows PC through Ollama.', status: 'Coming soon', icon: Laptop },
+    { key: 'automatic', name: 'Automatic', description: 'Will try Local Qwen before Cloud Qwen.', status: 'Coming soon', icon: Shuffle },
+  ];
+
   const statusColor = conn.kind === 'ok' ? colors.success : conn.kind === 'fail' ? colors.danger : colors.textFaint;
-  const statusLabel = services.mock && conn.kind === 'unknown' ? 'Mock mode' : conn.kind === 'ok' ? 'Connected' : conn.kind === 'fail' ? 'Disconnected' : conn.kind === 'checking' ? 'Checking…' : 'Not checked';
+  const statusLabel = services.mock && conn.kind === 'unknown' ? 'Mock mode' : conn.kind === 'ok' ? 'Connected' : conn.kind === 'fail' ? 'Server unavailable' : conn.kind === 'checking' ? 'Checking…' : 'Not configured';
 
   return (
     <View style={s.root}>
@@ -172,11 +193,41 @@ export default function SettingsScreen() {
           </View>
         </Section>
 
-        <Section title="AI server">
+        <Section title="AI Provider">
+          {providers.map((provider, index) => {
+            const selected = settings.aiProvider === provider.key;
+            const available = provider.key === 'cloud';
+            const Icon = provider.icon;
+            return (
+              <View key={provider.key}>
+                {index > 0 ? <View style={s.divider} /> : null}
+                <Pressable
+                  style={[s.providerCard, selected && { backgroundColor: colors.accentSoft }, !available && { opacity: 0.55 }]}
+                  disabled={!available}
+                  onPress={() => update({ aiProvider: provider.key })}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected, disabled: !available }}
+                >
+                  <View style={s.providerCardHeader}>
+                    <View style={[s.providerIcon, { backgroundColor: selected ? colors.accent : colors.surfaceAlt }]}>
+                      <Icon size={19} color={selected ? colors.onAccent : colors.textMuted} />
+                    </View>
+                    <Text style={s.providerName}>{provider.name}</Text>
+                    <Text style={[s.providerStatus, { color: available ? colors.success : colors.textMuted }]}>{provider.status}</Text>
+                    {selected ? <Check size={18} color={colors.accent} /> : null}
+                  </View>
+                  <Text style={s.providerDescription}>{provider.description}</Text>
+                </Pressable>
+              </View>
+            );
+          })}
+        </Section>
+
+        <Section title="Cloud connection">
           <View style={s.row}>
             <View style={{ flex: 1 }}>
-              <Text style={s.label}>Use mock services</Text>
-              <Text style={s.hint}>Returns sample answers and transcripts without a backend. Turn off to use the server below.</Text>
+               <Text style={s.label}>Use mock services</Text>
+               <Text style={s.hint}>Development-only sample responses. Turn this off to use Cloud Qwen.</Text>
             </View>
             <Switch value={settings.mockMode} onValueChange={(v) => update({ mockMode: v })} trackColor={{ true: colors.accent, false: colors.surfaceAlt }} />
           </View>
@@ -213,7 +264,9 @@ export default function SettingsScreen() {
                 <View style={[s.statusDot, { backgroundColor: services.mock && conn.kind === 'unknown' ? colors.warning : statusColor }]} />
                 <Text style={s.value}>{statusLabel}</Text>
               </View>
-              {conn.kind === 'ok' || conn.kind === 'fail' ? <Text style={[s.hint, { textAlign: 'right' }]}>{conn.detail}</Text> : null}
+               {conn.kind === 'ok' || conn.kind === 'fail' ? <Text style={[s.hint, { textAlign: 'right' }]}>{conn.detail}</Text> : null}
+               {modelName ? <Text style={[s.hint, { textAlign: 'right' }]}>Model: {modelName}</Text> : null}
+               {lastConnected ? <Text style={[s.hint, { textAlign: 'right' }]}>Last successful test: {new Date(lastConnected).toLocaleString()}</Text> : null}
               {services.mock ? <Text style={[s.hint, { textAlign: 'right', color: colors.warning }]}>Mock mode is active</Text> : null}
             </View>
           </View>

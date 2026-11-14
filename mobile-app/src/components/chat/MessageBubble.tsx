@@ -1,7 +1,8 @@
 import * as Clipboard from 'expo-clipboard';
-import { AlertCircle, Check, Copy, Mic, RotateCcw } from 'lucide-react-native';
+import * as Speech from 'expo-speech';
+import { AlertCircle, Check, Copy, Mic, RotateCcw, Volume2, VolumeX } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import { Alert, Image, Pressable, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import type { Palette } from '@/constants/theme';
 import { useTheme } from '@/context/SettingsContext';
@@ -45,6 +46,7 @@ export function MessageBubble({ message: m, onRetry, canRetry }: Props) {
   const s = useStyles(factory);
   const { colors } = useTheme();
   const [copied, setCopied] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
@@ -53,6 +55,40 @@ export function MessageBubble({ message: m, onRetry, canRetry }: Props) {
     await Clipboard.setStringAsync(text);
     setCopied(true);
     timer.current = setTimeout(() => setCopied(false), 1600);
+  };
+
+  const toggleSpeech = async () => {
+    if (speaking) {
+      await Speech.stop();
+      setSpeaking(false);
+      return;
+    }
+
+    const source = m.identification ? identificationToMarkdown(m.identification) : m.text;
+    const text = source
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[#>*_`~]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) return;
+
+    try {
+      await Speech.stop();
+      setSpeaking(true);
+      Speech.speak(text, {
+        onDone: () => setSpeaking(false),
+        onStopped: () => setSpeaking(false),
+        onError: () => {
+          setSpeaking(false);
+          Alert.alert('Speech unavailable', 'This device could not read the answer aloud.');
+        },
+      });
+    } catch {
+      setSpeaking(false);
+      Alert.alert('Speech unavailable', 'This device could not read the answer aloud.');
+    }
   };
 
   if (m.role === 'user') {
@@ -100,6 +136,16 @@ export function MessageBubble({ message: m, onRetry, canRetry }: Props) {
       <View style={s.aiBubble}>
         {m.identification ? <ComponentCard data={m.identification} /> : <MarkdownText>{m.text}</MarkdownText>}
         <View style={s.footer}>
+          <Pressable
+            style={s.action}
+            onPress={toggleSpeech}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={speaking ? 'Stop reading answer aloud' : 'Read answer aloud'}
+          >
+            {speaking ? <VolumeX size={15} color={colors.accent} /> : <Volume2 size={15} color={colors.textMuted} />}
+            <Text style={[s.actionText, speaking && { color: colors.accent }]}>{speaking ? 'Stop' : 'Read aloud'}</Text>
+          </Pressable>
           <Pressable style={s.action} onPress={copy} hitSlop={8} accessibilityRole="button" accessibilityLabel="Copy response">
             {copied ? <Check size={15} color={colors.success} /> : <Copy size={15} color={colors.textMuted} />}
             <Text style={[s.actionText, copied && { color: colors.success }]}>{copied ? 'Copied' : 'Copy'}</Text>

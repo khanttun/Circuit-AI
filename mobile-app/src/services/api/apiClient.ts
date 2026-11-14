@@ -1,3 +1,4 @@
+import { fetch as expoFetch } from 'expo/fetch';
 import { HEALTH_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from '@/constants/config';
 
 export type ApiErrorKind = 'network' | 'timeout' | 'http' | 'parse';
@@ -45,6 +46,7 @@ export function createApiClient(getBaseUrl: () => string): ApiClient {
     path: string,
     init: { body?: BodyInit; headers?: Record<string, string> },
     options?: RequestOptions,
+    fetchImpl: typeof fetch = fetch,
   ): Promise<T> {
     const base = normalizeBaseUrl(getBaseUrl());
     if (!isValidBaseUrl(base)) {
@@ -53,7 +55,7 @@ export function createApiClient(getBaseUrl: () => string): ApiClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch(`${base}${path}`, {
+      const res = await fetchImpl(`${base}${path}`, {
         method,
         headers: { Accept: 'application/json', ...init.headers },
         body: init.body,
@@ -83,9 +85,10 @@ export function createApiClient(getBaseUrl: () => string): ApiClient {
       if (e instanceof Error && e.name === 'AbortError') {
         throw new ApiError('timeout', 'The server took too long to respond. Please try again.');
       }
+      const cause = e instanceof Error && e.message ? ` Details: ${e.message}` : '';
       throw new ApiError(
         'network',
-        `Can't reach the CircuitAI server at ${base}. Make sure it is running and your phone is on the same Wi-Fi network.`,
+        `The request to ${base}${path} failed before the server responded. On a phone, use your PC's LAN IP and allow port 8000 through the firewall; Expo's tunnel only connects to Metro.${cause}`,
       );
     } finally {
       clearTimeout(timer);
@@ -98,7 +101,7 @@ export function createApiClient(getBaseUrl: () => string): ApiClient {
     postJson: (path, body, options) =>
       request('POST', path, { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }, options),
     // Do not set Content-Type for multipart: fetch adds the boundary itself.
-    postForm: (path, form, options) => request('POST', path, { body: form }, options),
+    postForm: (path, form, options) => request('POST', path, { body: form }, options, expoFetch),
   };
 }
 

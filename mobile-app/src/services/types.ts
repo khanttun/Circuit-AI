@@ -15,12 +15,12 @@ export interface ChatService {
 }
 
 export interface VoiceService {
-  /** POST /voice/transcribe — the backend talks to Google Cloud Speech-to-Text. */
+  /** POST /voice/transcribe — the backend talks to Groq Whisper. */
   transcribe(recording: VoiceRecording): Promise<TranscriptionResult>;
 }
 
 export interface HealthService {
-  /** GET /health — reports backend and local Qwen availability. */
+  /** GET /api/health — reports backend and provider availability. */
   check(): Promise<HealthStatus>;
 }
 

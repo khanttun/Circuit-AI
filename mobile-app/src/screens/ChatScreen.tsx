@@ -25,6 +25,8 @@ const factory = (c: Palette) => ({
   name: { color: c.text, fontSize: 20, fontWeight: '700' as const, letterSpacing: -0.3 },
   mockPill: { backgroundColor: c.warningSoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
   mockText: { color: c.warning, fontSize: 11, fontWeight: '700' as const, letterSpacing: 0.4 },
+  providerPill: { backgroundColor: c.accentSoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
+  providerText: { color: c.accent, fontSize: 11, fontWeight: '700' as const, letterSpacing: 0.3 },
 });
 
 export default function ChatScreen() {
@@ -100,6 +102,7 @@ export default function ChatScreen() {
         <Logo size={34} />
         <Text style={s.name}>{APP_NAME}</Text>
         {services.mock ? <View style={s.mockPill}><Text style={s.mockText}>MOCK MODE</Text></View> : null}
+        {!services.mock ? <View style={s.providerPill}><Text style={s.providerText}>{settings.aiProvider === 'cloud' ? 'CLOUD QWEN' : settings.aiProvider.toUpperCase()}</Text></View> : null}
         <View style={{ flex: 1 }} />
         {messages.length > 0 && <IconButton icon={Trash2} label="Clear conversation" onPress={confirmClear} />}
         <IconButton icon={Plus} label="New conversation" onPress={() => { chat.newConversation(); setDraft(''); clearImage(); }} filled color={colors.text} />

@@ -1,6 +1,7 @@
 export type Role = 'user' | 'assistant';
 export type MessageStatus = 'sent' | 'error';
 export type Difficulty = 'Beginner' | 'Intermediate' | 'Advanced';
+export type AIProvider = 'cloud' | 'local' | 'automatic';
 
 export interface ImageAttachment {
   uri: string;
@@ -44,6 +45,8 @@ export interface AIResponse {
   identification?: ComponentIdentification;
   /** True when produced by a mock service. */
   mock?: boolean;
+  model?: string;
+  provider?: AIProvider;
 }
 
 export interface ChatMessage {
@@ -56,6 +59,8 @@ export interface ChatMessage {
   voiceDurationMs?: number;
   identification?: ComponentIdentification;
   isMock?: boolean;
+  model?: string;
+  provider?: AIProvider;
   error?: string;
 }
 
@@ -82,6 +87,8 @@ export interface HealthStatus {
   backend: boolean;
   model: boolean;
   modelName?: string;
+  provider?: AIProvider;
+  configured?: boolean;
   mock?: boolean;
 }
 
@@ -100,6 +107,7 @@ export interface AppSettings {
   displayName: string;
   theme: ThemePreference;
   baseUrl: string;
+  aiProvider: AIProvider;
   mockMode: boolean;
   autoSendVoice: boolean;
   haptics: boolean;

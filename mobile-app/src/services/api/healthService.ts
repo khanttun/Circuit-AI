@@ -6,11 +6,11 @@ import { HEALTH_OPTIONS, type ApiClient } from './apiClient';
 export function createHealthService(client: ApiClient): HealthService {
   return {
     async check(): Promise<HealthStatus> {
-      const d = await client.get<{ status?: string; model_available?: boolean; model?: string }>(
+      const d = await client.get<{ status?: string; provider?: 'cloud' | 'local' | 'automatic'; model?: string; configured?: boolean }>(
         ENDPOINTS.health,
         HEALTH_OPTIONS,
       );
-      return { backend: true, model: d.model_available ?? d.status === 'ok', modelName: d.model };
+      return { backend: true, model: d.status === 'ok' && d.configured !== false, modelName: d.model, provider: d.provider, configured: d.configured };
     },
   };
 }
