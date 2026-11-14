@@ -18,7 +18,7 @@ const DEFAULTS: AppSettings = {
   mockMode: false,
   autoSendVoice: true,
   haptics: true,
-  connectionMode: 'server',
+  connectionMode: 'personal',
 };
 
 interface SettingsContextValue {
